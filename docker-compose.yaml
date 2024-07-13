@@ -1,0 +1,37 @@
+version: "3"
+services:
+  app:
+    build: ./app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./uploads:/app/uploads
+    environment:
+      - WATCHPACK_POLLING=true
+      - UPLOAD_DIRECTORY=/app/uploads
+
+  python-runner:
+    build: ./containers/python
+    image: python-runner
+    volumes:
+      - ./uploads:/code
+    environment:
+      - WATCHPACK_POLLING=true
+
+  javascript-runner:
+    build: ./containers/javascript
+    image: javascript-runner
+    volumes:
+      - ./uploads:/code
+    environment:
+      - WATCHPACK_POLLING=true
+
+  rust-runner:
+    build: ./containers/rust
+    image: rust-runner
+    volumes:
+      - ./uploads:/code
+    environment:
+      - WATCHPACK_POLLING=true
