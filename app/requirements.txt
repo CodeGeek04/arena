@@ -1,3 +1,4 @@
-gunicorn
-flask
+fastapi
+uvicorn
+python-multipart
 docker

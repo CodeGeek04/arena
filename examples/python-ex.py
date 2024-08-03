@@ -1,3 +1,5 @@
+prime_num = 200000
+
 def is_prime(n):
     if n < 2:
         return False
@@ -6,16 +8,14 @@ def is_prime(n):
             return False
     return True
 
-def find_first_400000_primes():
+def find_first_num_primes():
     primes = []
     num = 2
-    while len(primes) < 400000:
+    while len(primes) < prime_num:
         if is_prime(num):
             primes.append(num)
         num += 1
     return primes
 
-print("Finding the first 400000 prime numbers...")
-result = find_first_400000_primes()
-print(f"The first 400000 prime numbers are: {result[:100]}")
-print(f"The 400000th prime number is: {result[-1]}")
+result = find_first_num_primes()
+print(f"The {prime_num}th prime number is: {result[-1]}")

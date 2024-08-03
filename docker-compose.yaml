@@ -10,7 +10,6 @@ services:
       - ./uploads:/app/uploads
     environment:
       - WATCHPACK_POLLING=true
-      - UPLOAD_DIRECTORY=/app/uploads
 
   python-runner:
     build: ./containers/python
@@ -31,6 +30,14 @@ services:
   rust-runner:
     build: ./containers/rust
     image: rust-runner
+    volumes:
+      - ./uploads:/code
+    environment:
+      - WATCHPACK_POLLING=true
+
+  cpp-runner:
+    build: ./containers/cpp
+    image: cpp-runner
     volumes:
       - ./uploads:/code
     environment:
