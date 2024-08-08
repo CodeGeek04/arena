@@ -1,4 +1,4 @@
-prime_num = 200000
+prime_num = 20000
 
 def is_prime(n):
     if n < 2:

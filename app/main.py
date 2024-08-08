@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware  # Add this import
 import os
 import time
 import asyncio
@@ -11,6 +12,14 @@ from concurrent.futures import ThreadPoolExecutor
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 # Load configuration from JSON file
 with open('containers.json', 'r') as config_file:
     config = json.load(config_file)
