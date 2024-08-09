@@ -1,0 +1,45 @@
+{
+    "languages": {
+        "python": {
+            "extension": ".py",
+            "compile": null,
+            "execute": [
+                "python",
+                "/app/temp/{filename}"
+            ]
+        },
+        "javascript": {
+            "extension": ".js",
+            "compile": null,
+            "execute": [
+                "node",
+                "/app/temp/{filename}"
+            ]
+        },
+        "rust": {
+            "extension": ".rs",
+            "compile": [
+                "rustc",
+                "-O",
+                "/app/temp/{filename}",
+                "-o",
+                "/app/temp/script"
+            ],
+            "execute": [
+                "/app/temp/script"
+            ]
+        },
+        "cpp": {
+            "extension": ".cpp",
+            "compile": [
+                "g++",
+                "/app/temp/{filename}",
+                "-o",
+                "/app/temp/script"
+            ],
+            "execute": [
+                "/app/temp/script"
+            ]
+        }
+    }
+}
