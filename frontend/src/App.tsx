@@ -101,6 +101,18 @@ export default function App() {
     setExecuting(false);
   };
 
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const roundTime = (time) => {
+    return time.toFixed(2);
+  };
+
   const ResultCard = ({ title, result }) => (
     <Card className="mt-4 bg-gray-800 text-white">
       <CardHeader>
@@ -116,10 +128,20 @@ export default function App() {
               {result.output}
             </pre>
             <p>
-              <strong>Compilation time:</strong> {result.compilation_time}s
+              <strong>Compilation time:</strong>{" "}
+              {roundTime(result.compilation_time)}s
             </p>
             <p>
-              <strong>Execution time:</strong> {result.execution_time}s
+              <strong>Execution time:</strong>{" "}
+              {roundTime(result.execution_time)}s
+            </p>
+            <p>
+              <strong>Compilation memory:</strong>{" "}
+              {formatBytes(result.compilation_memory_bytes)}
+            </p>
+            <p>
+              <strong>Execution memory:</strong>{" "}
+              {formatBytes(result.execution_memory_bytes)}
             </p>
             <p>
               <strong>Success:</strong> {result.success ? "Yes" : "No"}

@@ -1,20 +1,29 @@
-import json
+import psutil
 import os
 import time
 import asyncio
 import logging
+import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
-from mangum import Mangum
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Load configuration from JSON file
-with open('containers.json', 'r') as config_file:
+with open('/app/containers.json', 'r') as config_file:
     config = json.load(config_file)
 
 LANGUAGES = config['languages']
@@ -26,18 +35,18 @@ thread_pool = ThreadPoolExecutor(max_workers=10)
 async def execute_code(file: UploadFile = File(...)):
     if not file:
         raise HTTPException(status_code=400, detail="No file part")
-    
+
     language = get_language_from_extension(file.filename)
     if not language:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    file_path = os.path.join('/tmp', file.filename)
-    
+    file_path = os.path.join('/app/temp', file.filename)
+
     try:
         contents = await file.read()
         with open(file_path, "wb") as f:
             f.write(contents)
-        
+
         logging.debug(f"File saved to: {file_path}")
 
         result = await run_subprocess(language, file_path)
@@ -48,9 +57,12 @@ async def execute_code(file: UploadFile = File(...)):
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
         return JSONResponse({
+            'language': language,
             'output': f"An unexpected error occurred: {str(e)}",
             'compilation_time': 0,
+            'compilation_memory_bytes': 0,
             'execution_time': 0,
+            'execution_memory_bytes': 0,
             'success': False
         }, status_code=500)
     finally:
@@ -72,22 +84,26 @@ async def run_subprocess(language, file_path):
     execute_command = language_config['execute']
 
     logging.debug(f"Running subprocess for {language}")
-    
+
     try:
         loop = asyncio.get_running_loop()
         
         compilation_time = 0
+        compilation_memory = 0
         if compile_command:
             compile_command = [part.format(filename=file_name) if isinstance(part, str) else part for part in compile_command]
             compilation_start = time.time()
             compile_result = await loop.run_in_executor(thread_pool, run_command, compile_command)
             compilation_time = time.time() - compilation_start
+            compilation_memory = compile_result['max_memory_bytes']
             if compile_result['returncode'] != 0:
                 return {
                     'language': language,
                     'output': compile_result['output'],
                     'compilation_time': compilation_time,
+                    'compilation_memory_bytes': compilation_memory,
                     'execution_time': 0,
+                    'execution_memory_bytes': 0,
                     'success': False
                 }
 
@@ -100,9 +116,12 @@ async def run_subprocess(language, file_path):
         execution_time = time.time() - execution_start
 
         return {
+            'language': language,
             'output': execute_result['output'],
             'compilation_time': compilation_time,
+            'compilation_memory_bytes': compilation_memory,
             'execution_time': execution_time,
+            'execution_memory_bytes': execute_result['max_memory_bytes'],
             'success': execute_result['returncode'] == 0
         }
 
@@ -112,19 +131,39 @@ async def run_subprocess(language, file_path):
     except Exception as e:
         logging.error(f"Error running command: {str(e)}")
         raise HTTPException(status_code=500, detail="Error executing code")
-    
+
 def run_command(command):
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=200, cwd='/tmp')
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/app/temp')
+        
+        # Start monitoring memory usage
+        max_memory = 0
+        while process.poll() is None:
+            try:
+                # Get memory info
+                memory_info = psutil.Process(process.pid).memory_info()
+                max_memory = max(max_memory, memory_info.rss)
+            except psutil.NoSuchProcess:
+                # Process has already terminated
+                break
+            time.sleep(0.1)  # Check every 100ms
+        
+        # Get the output
+        stdout, stderr = process.communicate(timeout=200)
+        
         return {
-            'output': result.stdout + result.stderr,
-            'returncode': result.returncode
+            'output': stdout + stderr,
+            'returncode': process.returncode,
+            'max_memory_bytes': max_memory
         }
     except subprocess.TimeoutExpired:
         return {
             'output': "Command execution timed out",
-            'returncode': -1
+            'returncode': -1,
+            'max_memory_bytes': 0
         }
 
-# Wrap the FastAPI app with Mangum for AWS Lambda compatibility
-handler = Mangum(app)
+
+if __name__ == 'main':
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
