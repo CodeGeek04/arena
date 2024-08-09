@@ -1,5 +1,7 @@
 "use client";
-import { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import Editor from "react-simple-code-editor";
+import { Highlight, themes } from "prism-react-renderer";
 import {
   Select,
   SelectContent,
@@ -8,15 +10,34 @@ import {
   SelectValue,
 } from "./components/ui/select";
 import { Button } from "./components/ui/button";
-import { Textarea } from "./components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Loader2 } from "lucide-react";
 
-const languages = [
-  { value: "python", label: "Python", extension: ".py" },
-  { value: "javascript", label: "JavaScript", extension: ".js" },
-  { value: "cpp", label: "C++", extension: ".cpp" },
-  { value: "rust", label: "Rust", extension: ".rs" },
+const languageOptions = [
+  {
+    value: "python",
+    label: "Python",
+    extension: ".py",
+    prismLanguage: "python",
+  },
+  {
+    value: "javascript",
+    label: "JavaScript",
+    extension: ".js",
+    prismLanguage: "javascript",
+  },
+  {
+    value: "cpp",
+    label: "C++",
+    extension: ".cpp",
+    prismLanguage: "cpp",
+  },
+  {
+    value: "rust",
+    label: "Rust",
+    extension: ".rs",
+    prismLanguage: "rust",
+  },
 ];
 
 export default function App() {
@@ -26,6 +47,8 @@ export default function App() {
   const [language2, setLanguage2] = useState("");
   const [results, setResults] = useState({ code1: null, code2: null });
   const [executing, setExecuting] = useState(false);
+  const editorRef1 = useRef(null);
+  const editorRef2 = useRef(null);
 
   const executeCode = async () => {
     setExecuting(true);
@@ -37,7 +60,9 @@ export default function App() {
     }
 
     const executeFile = async (code, language, index) => {
-      const languageInfo = languages.find((lang) => lang.value === language);
+      const languageInfo = languageOptions.find(
+        (lang) => lang.value === language
+      );
       if (!languageInfo) {
         setResults((prev) => ({
           ...prev,
@@ -77,7 +102,7 @@ export default function App() {
   };
 
   const ResultCard = ({ title, result }) => (
-    <Card className="mt-4">
+    <Card className="mt-4 bg-gray-800 text-white">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
       </CardHeader>
@@ -87,7 +112,7 @@ export default function App() {
             <p>
               <strong>Output:</strong>
             </p>
-            <pre className="bg-gray-100 p-2 rounded mt-2 overflow-x-auto">
+            <pre className="bg-gray-700 p-2 rounded mt-2 overflow-x-auto text-green-400">
               {result.output}
             </pre>
             <p>
@@ -107,69 +132,172 @@ export default function App() {
     </Card>
   );
 
-  return (
-    <div className="container mx-auto p-4 max-w-6xl">
-      <h1 className="text-3xl font-bold mb-6 text-center">
-        Language Comparison Tool
-      </h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {[1, 2].map((index) => (
-          <div key={index} className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Language {index}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Select
-                  value={index === 1 ? language1 : language2}
-                  onValueChange={(value) =>
-                    index === 1 ? setLanguage1(value) : setLanguage2(value)
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select language" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {languages.map((lang) => (
-                      <SelectItem key={lang.value} value={lang.value}>
-                        {lang.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Textarea
-                  value={index === 1 ? code1 : code2}
-                  onChange={(e) =>
-                    index === 1
-                      ? setCode1(e.target.value)
-                      : setCode2(e.target.value)
-                  }
-                  placeholder={`Enter code for Language ${index}`}
-                  className="mt-4 h-64"
-                />
-              </CardContent>
-            </Card>
-            <ResultCard
-              title={`Results for Language ${index}`}
-              result={results[`code${index}`]}
-            />
-          </div>
-        ))}
-      </div>
-      <Button
-        onClick={executeCode}
-        disabled={executing}
-        className="mt-6 w-full"
+  const CodeEditor = ({ code, setCode, language, editorRef }) => {
+    const [isFocused, setIsFocused] = useState(false);
+    const internalEditorRef = useRef(null);
+
+    const handleEditorMount = useCallback(
+      (editor) => {
+        if (editor) {
+          internalEditorRef.current = editor;
+          if (editorRef) {
+            editorRef.current = editor;
+          }
+        }
+      },
+      [editorRef]
+    );
+
+    useEffect(() => {
+      if (isFocused && internalEditorRef.current) {
+        const textarea = internalEditorRef.current._input;
+        if (textarea) {
+          textarea.focus();
+        }
+      }
+    }, [isFocused]);
+
+    const handleFocus = () => {
+      setIsFocused(true);
+    };
+
+    const handleBlur = () => {
+      setIsFocused(false);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const start = e.target.selectionStart;
+        const end = e.target.selectionEnd;
+        setCode(code.substring(0, start) + "  " + code.substring(end));
+        setTimeout(() => {
+          e.target.selectionStart = e.target.selectionEnd = start + 2;
+        }, 0);
+      }
+    };
+
+    return (
+      <div
+        className="border border-gray-700 rounded-md overflow-hidden"
+        style={{ height: "400px" }}
       >
-        {executing ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Executing...
-          </>
-        ) : (
-          "Compare Languages"
-        )}
-      </Button>
+        <Editor
+          ref={handleEditorMount}
+          value={code}
+          onValueChange={setCode}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          highlight={(code) =>
+            language ? (
+              <Highlight
+                theme={themes.vsDark}
+                code={code}
+                language={
+                  languageOptions.find((l) => l.value === language)
+                    ?.prismLanguage || "text"
+                }
+              >
+                {({
+                  className,
+                  style,
+                  tokens,
+                  getLineProps,
+                  getTokenProps,
+                }) => (
+                  <>
+                    {tokens.map((line, i) => (
+                      <div {...getLineProps({ line, key: i })}>
+                        {line.map((token, key) => (
+                          <span {...getTokenProps({ token, key })} />
+                        ))}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </Highlight>
+            ) : (
+              <pre>{code}</pre>
+            )
+          }
+          padding={10}
+          style={{
+            fontFamily: '"Fira code", "Fira Mono", monospace',
+            fontSize: 14,
+            backgroundColor: "#1e1e1e",
+            color: "#d4d4d4",
+            height: "100%",
+            overflow: "auto",
+          }}
+        />
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white">
+      <div className="container mx-auto p-4 max-w-6xl">
+        <h1 className="text-3xl font-bold mb-6 text-center">
+          Language Comparison Tool
+        </h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {[1, 2].map((index) => (
+            <div key={index} className="space-y-4">
+              <Card className="bg-gray-800">
+                <CardHeader>
+                  <CardTitle>Language {index}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Select
+                    value={index === 1 ? language1 : language2}
+                    onValueChange={(value) =>
+                      index === 1 ? setLanguage1(value) : setLanguage2(value)
+                    }
+                  >
+                    <SelectTrigger className="w-full bg-gray-700 text-white">
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-700 text-white">
+                      {languageOptions.map((lang) => (
+                        <SelectItem key={lang.value} value={lang.value}>
+                          {lang.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="mt-4">
+                    <CodeEditor
+                      code={index === 1 ? code1 : code2}
+                      setCode={index === 1 ? setCode1 : setCode2}
+                      language={index === 1 ? language1 : language2}
+                      editorRef={index === 1 ? editorRef1 : editorRef2}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+              <ResultCard
+                title={`Results for Language ${index}`}
+                result={results[`code${index}`]}
+              />
+            </div>
+          ))}
+        </div>
+        <Button
+          onClick={executeCode}
+          disabled={executing || !language1 || !language2}
+          className="mt-6 w-full bg-blue-600 hover:bg-blue-700"
+        >
+          {executing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Executing...
+            </>
+          ) : (
+            "Compare Languages"
+          )}
+        </Button>
+      </div>
     </div>
   );
 }
