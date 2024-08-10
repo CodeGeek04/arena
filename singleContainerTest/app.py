@@ -1,13 +1,14 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware  # Add this import
+import psutil
 import os
 import time
 import asyncio
 import logging
 import json
-import docker
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
@@ -15,22 +16,17 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 # Load configuration from JSON file
-with open('containers.json', 'r') as config_file:
+with open('/app/containers.json', 'r') as config_file:
     config = json.load(config_file)
 
-UPLOAD_DIRECTORY = "/app/uploads"
 LANGUAGES = config['languages']
-
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
-
-# Initialize Docker client
-docker_client = docker.from_env()
 
 # Create a thread pool executor
 thread_pool = ThreadPoolExecutor(max_workers=10)
@@ -39,21 +35,21 @@ thread_pool = ThreadPoolExecutor(max_workers=10)
 async def execute_code(file: UploadFile = File(...)):
     if not file:
         raise HTTPException(status_code=400, detail="No file part")
-    
+
     language = get_language_from_extension(file.filename)
     if not language:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    file_path = os.path.join(UPLOAD_DIRECTORY, file.filename)
-    
+    file_path = os.path.join('/app/temp', file.filename)
+
     try:
         contents = await file.read()
         with open(file_path, "wb") as f:
             f.write(contents)
-        
+
         logging.debug(f"File saved to: {file_path}")
 
-        result = await run_in_container(language, file_path)
+        result = await run_subprocess(language, file_path)
 
         return JSONResponse(result)
     except HTTPException:
@@ -61,9 +57,12 @@ async def execute_code(file: UploadFile = File(...)):
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
         return JSONResponse({
+            'language': language,
             'output': f"An unexpected error occurred: {str(e)}",
             'compilation_time': 0,
+            'compilation_memory_bytes': 0,
             'execution_time': 0,
+            'execution_memory_bytes': 0,
             'success': False
         }, status_code=500)
     finally:
@@ -77,64 +76,94 @@ def get_language_from_extension(filename):
             return lang
     return None
 
-async def run_in_container(language, file_path):
-    container_name = f"arena-{language}-runner-1"
+async def run_subprocess(language, file_path):
     file_name = os.path.basename(file_path)
 
     language_config = LANGUAGES[language]
     compile_command = language_config['compile']
     execute_command = language_config['execute']
 
-    logging.debug(f"Running in container {container_name}")
-    
+    logging.debug(f"Running subprocess for {language}")
+
     try:
         loop = asyncio.get_running_loop()
         
         compilation_time = 0
+        compilation_memory = 0
         if compile_command:
             compile_command = [part.format(filename=file_name) if isinstance(part, str) else part for part in compile_command]
             compilation_start = time.time()
-            compile_result = await loop.run_in_executor(thread_pool, execute_docker_command, container_name, compile_command)
+            compile_result = await loop.run_in_executor(thread_pool, run_command, compile_command)
             compilation_time = time.time() - compilation_start
-            if compile_result.exit_code != 0:
+            compilation_memory = compile_result['max_memory_bytes']
+            if compile_result['returncode'] != 0:
                 return {
                     'language': language,
-                    'output': compile_result.output.decode('utf-8', errors='replace'),
+                    'output': compile_result['output'],
                     'compilation_time': compilation_time,
+                    'compilation_memory_bytes': compilation_memory,
                     'execution_time': 0,
+                    'execution_memory_bytes': 0,
                     'success': False
                 }
 
         execute_command = [part.format(filename=file_name) if isinstance(part, str) else part for part in execute_command]
         execution_start = time.time()
         execute_result = await asyncio.wait_for(
-            loop.run_in_executor(thread_pool, execute_docker_command, container_name, execute_command),
+            loop.run_in_executor(thread_pool, run_command, execute_command),
             timeout=200.0  # 200 seconds timeout
         )
         execution_time = time.time() - execution_start
 
         return {
-            'output': execute_result.output.decode('utf-8', errors='replace'),
+            'language': language,
+            'output': execute_result['output'],
             'compilation_time': compilation_time,
+            'compilation_memory_bytes': compilation_memory,
             'execution_time': execution_time,
-            'success': execute_result.exit_code == 0
+            'execution_memory_bytes': execute_result['max_memory_bytes'],
+            'success': execute_result['returncode'] == 0
         }
 
     except asyncio.TimeoutError:
-        logging.error(f"Execution in container {container_name} timed out after 30 seconds")
+        logging.error(f"Execution of {language} code timed out after 200 seconds")
         raise HTTPException(status_code=504, detail="Execution timed out")
-    except docker.errors.NotFound:
-        logging.error(f"Container {container_name} not found")
-        raise HTTPException(status_code=500, detail=f"Container {container_name} not found")
     except Exception as e:
-        logging.error(f"Error running command in container: {str(e)}")
+        logging.error(f"Error running command: {str(e)}")
         raise HTTPException(status_code=500, detail="Error executing code")
-    
-def execute_docker_command(container_name, command):
-    container = docker_client.containers.get(container_name)
-    result = container.exec_run(command)
-    return result
 
-if __name__ == '__main__':
+def run_command(command):
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/app/temp')
+        
+        # Start monitoring memory usage
+        max_memory = 0
+        while process.poll() is None:
+            try:
+                # Get memory info
+                memory_info = psutil.Process(process.pid).memory_info()
+                max_memory = max(max_memory, memory_info.rss)
+            except psutil.NoSuchProcess:
+                # Process has already terminated
+                break
+            time.sleep(0.1)  # Check every 100ms
+        
+        # Get the output
+        stdout, stderr = process.communicate(timeout=200)
+        
+        return {
+            'output': stdout + stderr,
+            'returncode': process.returncode,
+            'max_memory_bytes': max_memory
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            'output': "Command execution timed out",
+            'returncode': -1,
+            'max_memory_bytes': 0
+        }
+
+
+if __name__ == 'main':
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

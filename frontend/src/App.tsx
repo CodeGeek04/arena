@@ -88,37 +88,35 @@ export default function App() {
     setExecuting(false);
   }, [language1, language2]);
 
-  const ResultCard = React.memo(
-    ({ title, result }: { title: string; result: any }) => (
-      <Card className="mt-4 bg-gray-800 text-white">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {result ? (
-            <div>
-              <p>
-                <strong>Output:</strong>
-              </p>
-              <pre className="bg-gray-700 p-2 rounded mt-2 overflow-x-auto text-green-400">
-                {result.output}
-              </pre>
-              <p>
-                <strong>Compilation time:</strong> {result.compilation_time}s
-              </p>
-              <p>
-                <strong>Execution time:</strong> {result.execution_time}s
-              </p>
-              <p>
-                <strong>Success:</strong> {result.success ? "Yes" : "No"}
-              </p>
-            </div>
-          ) : (
-            <p>No results yet.</p>
-          )}
-        </CardContent>
-      </Card>
-    )
+  const ResultCard = ({ title, result }) => (
+    <Card className="mt-4 bg-gray-800 text-white">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {result ? (
+          <div>
+            <p>
+              <strong>Output:</strong>
+            </p>
+            <pre className="bg-gray-700 p-2 rounded mt-2 overflow-x-auto text-green-400">
+              {result.output}
+            </pre>
+            <p>
+              <strong>Compilation time:</strong> {result.compilation_time}s
+            </p>
+            <p>
+              <strong>Execution time:</strong> {result.execution_time}s
+            </p>
+            <p>
+              <strong>Success:</strong> {result.success ? "Yes" : "No"}
+            </p>
+          </div>
+        ) : (
+          <p>No results yet.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 
   const CodeEditor = React.memo(

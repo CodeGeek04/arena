@@ -5,7 +5,7 @@
             "compile": null,
             "execute": [
                 "python",
-                "/code/{filename}"
+                "/app/temp/{filename}"
             ]
         },
         "javascript": {
@@ -13,7 +13,7 @@
             "compile": null,
             "execute": [
                 "node",
-                "/code/{filename}"
+                "/app/temp/{filename}"
             ]
         },
         "rust": {
@@ -21,24 +21,24 @@
             "compile": [
                 "rustc",
                 "-O",
-                "/code/{filename}",
+                "/app/temp/{filename}",
                 "-o",
-                "/code/script"
+                "/app/temp/script"
             ],
             "execute": [
-                "/code/script"
+                "/app/temp/script"
             ]
         },
         "cpp": {
             "extension": ".cpp",
             "compile": [
                 "g++",
-                "/code/{filename}",
+                "/app/temp/{filename}",
                 "-o",
-                "/code/script"
+                "/app/temp/script"
             ],
             "execute": [
-                "/code/script"
+                "/app/temp/script"
             ]
         }
     }
