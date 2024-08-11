@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from statistics import mean, median
 
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
@@ -132,37 +133,51 @@ async def run_subprocess(language, file_path):
         logging.error(f"Error running command: {str(e)}")
         raise HTTPException(status_code=500, detail="Error executing code")
 
-def run_command(command):
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/app/temp')
-        
-        # Start monitoring memory usage
-        max_memory = 0
-        while process.poll() is None:
-            try:
-                # Get memory info
-                memory_info = psutil.Process(process.pid).memory_info()
-                max_memory = max(max_memory, memory_info.rss)
-            except psutil.NoSuchProcess:
-                # Process has already terminated
-                break
-            time.sleep(0.1)  # Check every 100ms
-        
-        # Get the output
-        stdout, stderr = process.communicate(timeout=200)
-        
-        return {
-            'output': stdout + stderr,
-            'returncode': process.returncode,
-            'max_memory_bytes': max_memory
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            'output': "Command execution timed out",
-            'returncode': -1,
-            'max_memory_bytes': 0
-        }
+def run_command(command, num_runs=3):
+    results = []
+    for _ in range(num_runs):
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/app/temp')
+            
+            # Start monitoring memory usage
+            memory_samples = []
+            while process.poll() is None:
+                try:
+                    # Get detailed memory info
+                    memory_info = psutil.Process(process.pid).memory_full_info()
+                    memory_samples.append(memory_info.uss)  # Unique Set Size
+                except psutil.NoSuchProcess:
+                    # Process has already terminated
+                    break
+                time.sleep(0.001)  # Check every 10ms
+            
+            # Get the output
+            stdout, stderr = process.communicate(timeout=200)
+            
+            results.append({
+                'output': stdout + stderr,
+                'returncode': process.returncode,
+                'max_memory_bytes': max(memory_samples) if memory_samples else 0,
+                'avg_memory_bytes': mean(memory_samples) if memory_samples else 0,
+                'median_memory_bytes': median(memory_samples) if memory_samples else 0
+            })
+        except subprocess.TimeoutExpired:
+            results.append({
+                'output': "Command execution timed out",
+                'returncode': -1,
+                'max_memory_bytes': 0,
+                'avg_memory_bytes': 0,
+                'median_memory_bytes': 0
+            })
 
+    # Aggregate results from multiple runs
+    return {
+        'output': results[0]['output'],  # Use output from the first run
+        'returncode': results[0]['returncode'],  # Use return code from the first run
+        'max_memory_bytes': max(r['max_memory_bytes'] for r in results),
+        'avg_memory_bytes': mean(r['avg_memory_bytes'] for r in results),
+        'median_memory_bytes': median(r['median_memory_bytes'] for r in results)
+    }
 
 if __name__ == 'main':
     import uvicorn
