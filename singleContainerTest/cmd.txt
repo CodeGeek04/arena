@@ -1,0 +1,2 @@
+aws lambda create-function --function-name code-executor --package-type Image --code ImageUri=767397787944.dkr.ecr.ap-south-1.amazonaws.com/lambda-code-executor:latest --role arn:aws:iam::767397787944:role/lambda-code-executor-role --profile lambda-code-executor
+aws lambda create-function --function-name code-executor --package-type Image --code ImageUri=767397787944.dkr.ecr.ap-south-1.amazonaws.com/lambda-code-executor:latest --role arn:aws:iam::767397787944:role/lambda-code-executor-role --profile lambda-code-executor

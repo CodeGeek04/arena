@@ -3,3 +3,5 @@ mangum
 uvicorn
 python-multipart
 psutil
+requests
+uuid

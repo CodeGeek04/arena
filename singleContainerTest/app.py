@@ -1,3 +1,4 @@
+import uuid
 import psutil
 import os
 import time
@@ -9,7 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
+from mangum import Mangum
+import json
+import base64
+from fastapi import UploadFile
+from io import BytesIO
+from pydantic import BaseModel
 logging.basicConfig(level=logging.DEBUG)
 app = FastAPI()
 
@@ -23,7 +29,7 @@ app.add_middleware(
 )
 
 # Load configuration from JSON file
-with open('/app/containers.json', 'r') as config_file:
+with open('containers.json', 'r') as config_file:
     config = json.load(config_file)
 
 LANGUAGES = config['languages']
@@ -31,43 +37,35 @@ LANGUAGES = config['languages']
 # Create a thread pool executor
 thread_pool = ThreadPoolExecutor(max_workers=10)
 
-@app.post("/execute")
-async def execute_code(file: UploadFile = File(...)):
-    if not file:
-        raise HTTPException(status_code=400, detail="No file part")
+class CodeExecution(BaseModel):
+    file_path: str
+    language: str
 
-    language = get_language_from_extension(file.filename)
-    if not language:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
-
-    file_path = os.path.join('/app/temp', file.filename)
+async def execute_code(execution: CodeExecution):
+    print("Event received in execute_code")
+    if not os.path.exists(execution.file_path):
+        raise HTTPException(status_code=400, detail="File not found")
+    
+    if not execution.language or execution.language not in LANGUAGES:
+        raise HTTPException(status_code=400, detail="Invalid or unsupported language")
 
     try:
-        contents = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(contents)
-
-        logging.debug(f"File saved to: {file_path}")
-
-        result = await run_subprocess(language, file_path)
-
-        return JSONResponse(result)
-    except HTTPException:
-        raise
+        result = await run_subprocess(execution.language, execution.file_path)
+        return result
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
-        return JSONResponse({
-            'language': language,
+        return {
+            'language': execution.language,
             'output': f"An unexpected error occurred: {str(e)}",
             'compilation_time': 0,
             'compilation_memory_bytes': 0,
             'execution_time': 0,
             'execution_memory_bytes': 0,
             'success': False
-        }, status_code=500)
+        }
     finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if os.path.exists(execution.file_path):
+            os.remove(execution.file_path)
 
 def get_language_from_extension(filename):
     file_extension = os.path.splitext(filename)[1]
@@ -134,7 +132,7 @@ async def run_subprocess(language, file_path):
 
 def run_command(command):
     try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/app/temp')
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd='/tmp')
         
         # Start monitoring memory usage
         max_memory = 0
@@ -150,7 +148,7 @@ def run_command(command):
         
         # Get the output
         stdout, stderr = process.communicate(timeout=200)
-        
+
         return {
             'output': stdout + stderr,
             'returncode': process.returncode,
@@ -163,7 +161,42 @@ def run_command(command):
             'max_memory_bytes': 0
         }
 
+def lambda_handler(event, context):
+    print("Received event: ", event)
+    
+    if event['httpMethod'] == 'POST':
+        body = json.loads(event['body'])
+        
+        code_b64 = body['code']
+        language = body['language']
+        extension = LANGUAGES[language]['extension']
+        
+        # Decode base64 code
+        code = base64.b64decode(code_b64).decode('utf-8')
+        
+        # Generate a unique filename
+        filename = f"{language}_{uuid.uuid4()}"
+        file_path = f"/tmp/{filename}" + extension
 
-if __name__ == 'main':
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        
+        # Save the code to a file
+        with open(file_path, 'w') as f:
+            f.write(code)
+        print("File saved to: ", file_path)
+        
+        # Create a CodeExecution instance
+        execution = CodeExecution(file_path=file_path, language=language)
+        
+        # Call the FastAPI route directly
+        loop = asyncio.get_event_loop()
+        result = loop.run_until_complete(execute_code(execution))
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+    else:
+        return {
+            'statusCode': 405,
+            'body': 'Method Not Allowed'
+        }
