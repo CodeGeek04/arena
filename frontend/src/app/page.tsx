@@ -66,15 +66,21 @@ export default function App() {
 
       const response = await executeCodeServer(code, languageInfo);
       console.log("Response: ", response);
+
+      // Update the results state immediately for this index
+      setResults((prevResults) => ({
+        ...prevResults,
+        [index]: response,
+      }));
+
       return response;
     };
 
-    const [result1, result2] = await Promise.all([
-      executeFile(editorRef1.current?.getValue(), language1, 1),
-      executeFile(editorRef2.current?.getValue(), language2, 2),
-    ]);
+    // Execute both in parallel, but don't wait for both to complete
+    executeFile(editorRef1.current?.getValue(), language1, 1);
+    executeFile(editorRef2.current?.getValue(), language2, 2);
 
-    setResults({ 1: result1, 2: result2 });
+    // Set executing to false after both have started
     setExecuting(false);
   }, [language1, language2]);
 
